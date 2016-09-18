@@ -1,0 +1,69 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import fnmatch
+import logging
+from itertools import groupby
+
+
+class LocalizedString:
+    def __init__(self, string, translation, locale):
+        self.string = string
+        self.translation = translation
+        self.locale = locale
+        self.user_info = {}
+
+
+class Localization:
+    def __init__(self, strings=None):
+        self.strings = strings
+
+    def load(self, path):
+        raise NotImplemented()
+
+    def save(self, path):
+        raise NotImplemented()
+
+    def get_all_locales(self):
+        return set([s.locale for s in self.strings])
+
+
+class XCodeLocalization(Localization):
+    def load(self, path):
+        pass
+
+    def save(self, path):
+        pass
+
+
+class CSVLocalization(Localization):
+    def load(self, path):
+        pass
+
+    def save(self, path):
+        pass
+
+
+def find_paths(path, pattern, path_type='fd'):
+    for path, dir_names, file_names in os.walk(path):
+        folder_items = []
+        if 'f' in path_type:
+            folder_items += file_names
+
+        if 'd' in path_type:
+            folder_items += dir_names
+
+        found_items = fnmatch.filter(folder_items, pattern)
+        found_paths = map(lambda i: os.path.join(path, i), found_items)
+        for item in found_paths:
+            yield item
+
+
+def main():
+    for path in find_paths('.', '*', path_type='d'):
+        print(path)
+
+
+if __name__ == '__main__':
+    main()
