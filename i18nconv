@@ -99,16 +99,14 @@ class XCodeLocalization(Localization):
 
                 lines = map(lambda s: self._lines_from_string(s), strings)
                 i18convLog.info("Exported %i strings to %s", len(lines), strings_path)
-                file = open(strings_path, 'w')
-                file.write(os.linesep.join(lines))
-                file.close()
+                with open(strings_path, 'w') as file:
+                    file.write(os.linesep.join(lines))
 
         i18convLog.info("Exported %i strings", len(self.strings))
 
     def _parse_strings_file(self, path, locale):
-        file = open(path, 'r')
-        content = os.linesep.join(file.readlines())
-        file.close()
+        with open(path, 'r') as file:
+            content = os.linesep.join(file.readlines())
 
         clean_file = self._remove_comments(content)
         string_regex = r'\"(.*)\"\s*\=\s*\"(.*)\"\s*;'
@@ -167,30 +165,30 @@ class CSVLocalization(Localization):
         for filepath in find_paths(path, '*.csv', 'f'):
             filename = path_basename(filepath)
 
-            file = open(filepath, 'rb')
-            csv_reader = csv.DictReader(file)
+            with open(filepath, 'rb') as file:
+                csv_reader = csv.DictReader(file)
 
-            file_strings = []
-            for row in csv_reader:
-                if "String" not in row:
-                    continue
+                file_strings = []
+                for row in csv_reader:
+                    if "String" not in row:
+                        continue
 
-                tag = row["String"]
+                    tag = row["String"]
 
-                if not tag:
-                    continue
+                    if not tag:
+                        continue
 
-                tag_strings = []
-                for locale, translation in row.iteritems():
-                    if locale != "String":
-                        string = LocalizedString(tag, translation, locale)
-                        string.user_info["FileName"] = filename
-                        tag_strings.append(string)
+                    tag_strings = []
+                    for locale, translation in row.iteritems():
+                        if locale != "String":
+                            string = LocalizedString(tag, translation, locale)
+                            string.user_info["FileName"] = filename
+                            tag_strings.append(string)
 
-                file_strings += tag_strings
+                    file_strings += tag_strings
 
-            strings += file_strings
-            i18convLog.info("Imported %s strings from %s", len(file_strings), filepath)
+                strings += file_strings
+                i18convLog.info("Imported %s strings from %s", len(file_strings), filepath)
 
         self.strings = strings
         i18convLog.info("Imported %s strings", len(self.strings))
@@ -206,18 +204,17 @@ class CSVLocalization(Localization):
         for filename, strings in sorted_groupby(self.strings, lambda s: s.user_info.get("FileName", "Localizable")):
             filepath = os.path.join(path, filename + '.csv')
 
-            file = open(filepath, 'wb')
-            csv_writer = csv.DictWriter(file, fieldnames=fieldnames)
-            csv_writer.writeheader()
+            with open(filepath, 'wb') as file:
+                csv_writer = csv.DictWriter(file, fieldnames=fieldnames)
+                csv_writer.writeheader()
 
-            strings_count = 0
-            for tag, strings in sorted_groupby(strings, lambda s: s.tag):
-                row_data = self._strings_to_csv_row(strings, tag)
-                csv_writer.writerow(row_data)
-                strings_count += 1
+                strings_count = 0
+                for tag, strings in sorted_groupby(strings, lambda s: s.tag):
+                    row_data = self._strings_to_csv_row(strings, tag)
+                    csv_writer.writerow(row_data)
+                    strings_count += 1
 
-            file.close()
-            i18convLog.info("Exported %i tags to %s", strings_count, filepath)
+                i18convLog.info("Exported %i tags to %s", strings_count, filepath)
 
     def _sorted_locales(self):
         def compare_locales(lhs, rhs):
@@ -279,4 +276,4 @@ if __name__ == '__main__':
     ffl_csv_localization.load('/Users/shed/Desktop/i18nconv/tests')
 
     xcode_localization = XCodeLocalization(ffl_csv_localization.strings)
-    xcode_localization.save('tests/ffl_xcode')
+    xcode_localization.save('/Users/shed/Documents/Projects/ffl-client-ios/FreeForLunch')
