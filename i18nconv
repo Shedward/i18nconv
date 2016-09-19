@@ -125,7 +125,8 @@ class XCodeLocalization(Localization):
             escaping_chars = {
                 '\n': '\\n',
                 '\r': '\\r',
-                '\\': '\\\\'
+                '\\': '\\\\',
+                '"': '\\"'
             }
 
             result = ""
@@ -276,4 +277,4 @@ if __name__ == '__main__':
     ffl_csv_localization.load('/Users/shed/Desktop/i18nconv/tests')
 
     xcode_localization = XCodeLocalization(ffl_csv_localization.strings)
-    xcode_localization.save('/Users/shed/Documents/Projects/ffl-client-ios/FreeForLunch')
+    xcode_localization.save('/Users/shed/Documents/Projects/ffl-client-ios/FreeForLunch/Resources')
