@@ -1,18 +1,32 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os
+from itertools import groupby
+from collections import Counter
+import csv
 import fnmatch
 import logging
-from itertools import groupby
+import os
+import re
+
+i18convLog = logging.getLogger('i18conv')
 
 
 class LocalizedString:
-    def __init__(self, string, translation, locale):
-        self.string = string
+    def __init__(self, tag, translation, locale="Base"):
+        self.tag = tag
         self.translation = translation
         self.locale = locale
         self.user_info = {}
+
+    def __repr__(self):
+        data = {
+            "locale": self.locale,
+            "string": self.string,
+            "translation": self.translation
+        }
+
+        return "<LocalizedString: {locale}: \"{string}\" = \"{translation}\">".format(**data)
 
 
 class Localization:
@@ -28,21 +42,204 @@ class Localization:
     def get_all_locales(self):
         return set([s.locale for s in self.strings])
 
+    def localized_strings_count(self):
+        tags = map(lambda s: s.tag, self.strings)
+        counter = Counter(tags)
+        return len(counter.keys())
+
 
 class XCodeLocalization(Localization):
     def load(self, path):
-        pass
+        strings = []
+        for lproj_path in find_paths(path, '*.lproj', 'd'):
+            locale = path_basename(lproj_path)
+
+            i18convLog.info("Check lproj %s", lproj_path)
+            for strings_path in find_paths(lproj_path, '*.strings', 'f'):
+                filename = path_basename(strings_path)
+                file_strings = self._parse_strings_file(strings_path, locale)
+
+                i18convLog.info("Imported %i strings from %s", len(file_strings), strings_path)
+                for string in file_strings:
+                    string.locale = locale
+                    string.user_info['FileName'] = filename
+                strings += file_strings
+
+        i18convLog.info("Imported %i strings", len(strings))
+        self.strings = strings
 
     def save(self, path):
-        pass
+        lproj_paths = list(find_paths(path, '*.lproj', 'f'))
+        default_lproj_folder = path
+
+        if len(lproj_paths) > 0:
+            default_lproj_folder = os.path.commonprefix(lproj_paths)
+
+        for locale, strings in sorted_groupby(self.strings, lambda s: s.locale or 'Base'):
+            lproj_name = '%s.lproj' % locale
+            existing_lprojs = filter(lambda p: p.endswith(lproj_name), lproj_paths)
+
+            lproj_path = ""
+            if len(existing_lprojs) > 0:
+                lproj_path = existing_lprojs[0]
+                i18convLog.info("Overwriting lproj in %s", lproj_path)
+                if len(existing_lprojs > 1):
+                    paths = os.linesep.join(map(lambda p: '\t%s' % p, existing_lprojs))
+                    i18convLog.warning("Found more than one '%s' (taken the first one): \n %s", lproj_name, paths)
+            else:
+                lproj_path = os.path.join(default_lproj_folder, lproj_name)
+                if not os.path.exists(lproj_path):
+                    i18convLog.info("Creating new lproj in %s", lproj_path)
+                    os.makedirs(lproj_path)
+                else:
+                    i18convLog.info("Overwriting lproj in %s", lproj_path)
+
+            for filename, strings in sorted_groupby(strings, lambda s: s.user_info.get('FileName', 'Localized')):
+                strings_path = os.path.join(lproj_path, filename + '.' + 'strings')
+
+                lines = map(lambda s: self._lines_from_string(s), strings)
+                i18convLog.info("Exported %i strings to %s", len(lines), strings_path)
+                file = open(strings_path, 'w')
+                file.write(os.linesep.join(lines))
+                file.close()
+
+        i18convLog.info("Exported %i strings", len(self.strings))
+
+    def _parse_strings_file(self, path, locale):
+        file = open(path, 'r')
+        content = os.linesep.join(file.readlines())
+        file.close()
+
+        clean_file = self._remove_comments(content)
+        string_regex = r'\"(.*)\"\s*\=\s*\"(.*)\"\s*;'
+
+        strings = []
+        for (string, translation) in re.findall(string_regex, clean_file):
+            strings.append(LocalizedString(string.decode('string_escape'), translation.decode('string_escape')))
+
+        return strings
+
+    def _lines_from_string(self, string):
+        def escape_string(string):
+            escaping_chars = {
+                '\n': '\\n',
+                '\r': '\\r',
+                '\\': '\\\\'
+            }
+
+            result = ""
+            for ch in string:
+                if ch in escaping_chars:
+                    result += escaping_chars[ch]
+                else:
+                    result += ch
+            return result
+
+        data = {
+            "string": escape_string(string.tag),
+            "translation": escape_string(string.translation)
+        }
+
+        return '"{string}" = "{translation}";'.format(**data)
+
+    def _remove_comments(self, string):
+        pattern = r"(\".*?\"|\'.*?\')|(/\*.*?\*/|//[^\r\n]*$)"
+        # first group captures quoted strings (double or single)
+        # second group captures comments (//single-line or /* multi-line */)
+        regex = re.compile(pattern, re.MULTILINE | re.DOTALL)
+
+        def _replacer(match):
+            # if the 2nd group (capturing comments) is not None,
+            # it means we have captured a non-quoted (real) comment string.
+            if match.group(2) is not None:
+                return ""  # so we will return empty to remove the comment
+            else:  # otherwise, we will return the 1st group
+                return match.group(1)  # captured quoted-string
+        return regex.sub(_replacer, string)
 
 
 class CSVLocalization(Localization):
     def load(self, path):
-        pass
+        for filepath in find_paths(path, '*.csv', 'f'):
+            filename = path_basename(filepath)
+
+            file = open(filepath, 'rb')
+            csv_reader = csv.DictReader(file)
+
+            strings = []
+            for row in csv_reader:
+                if "String" not in row:
+                    continue
+
+                tag = row["String"]
+
+                file_strings = []
+                for locale, translation in row:
+                    if locale != "String":
+                        string = LocalizedString(tag, translation, locale)
+                        string.user_info["FileName"] = filename
+                        file_strings.append(string)
+
+                i18convLog.info("Imported %s strings from %s", len(file_strings), filepath)
+                string += file_strings
+
+        self.strings = strings
+        i18convLog.info("Imported %s strings", len(self.strings))
 
     def save(self, path):
-        pass
+        all_locales = self._sorted_locales()
+
+        fieldnames = ["String"] + all_locales
+
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        for filename, strings in sorted_groupby(self.strings, lambda s: s.user_info.get("FileName", "Localizable")):
+            filepath = os.path.join(path, filename + '.csv')
+
+            file = open(filepath, 'wb')
+            csv_writer = csv.DictWriter(file, fieldnames=fieldnames)
+            csv_writer.writeheader()
+
+            strings_count = 0
+            for tag, strings in sorted_groupby(strings, lambda s: s.tag):
+                row_data = self._strings_to_csv_row(strings, tag)
+                csv_writer.writerow(row_data)
+                strings_count += 1
+
+            file.close()
+            i18convLog.info("Exported %i tags to %s", strings_count, filepath)
+
+    def _sorted_locales(self):
+        def compare_locales(lhs, rhs):
+            pinned_locales = ['Base', 'en', 'ru']
+            left_is_spec = lhs in pinned_locales
+            right_is_spec = rhs in pinned_locales
+
+            if left_is_spec and not right_is_spec:
+                return -1
+            elif not left_is_spec and right_is_spec:
+                return 1
+            elif left_is_spec and right_is_spec:
+                lhs_spec_indx = pinned_locales.index(lhs)
+                rhs_spec_indx = pinned_locales.index(rhs)
+                return cmp(lhs_spec_indx, rhs_spec_indx)
+            else:
+                return cmp(lhs, rhs)
+
+        return sorted(self.get_all_locales(), cmp=compare_locales)
+
+    def _strings_to_csv_row(self, strings, tag):
+        row_data = {"String": tag}
+        for string in filter(lambda s: s.tag == tag, strings):
+            row_data[string.locale] = string.translation
+        return row_data
+
+
+def path_basename(path):
+    basename = os.path.basename(path)
+    (name, ext) = os.path.splitext(basename)
+    return name
 
 
 def find_paths(path, pattern, path_type='fd'):
@@ -60,10 +257,19 @@ def find_paths(path, pattern, path_type='fd'):
             yield item
 
 
-def main():
-    for path in find_paths('.', '*', path_type='d'):
-        print(path)
+def sorted_groupby(iterable, keyfunc=None):
+    sorted_iterable = sorted(iterable, key=keyfunc)
+    return groupby(sorted_iterable, keyfunc)
 
 
 if __name__ == '__main__':
-    main()
+    logging.basicConfig(level=logging.INFO)
+    i18convLog.info("Test")
+    x_code_localization = XCodeLocalization()
+    x_code_localization.load("/Users/shed/Documents/Projects/ffl-client-ios/FreeForLunch")
+    x_code_localization.save("tests/XCode_test")
+
+    csv_localization = CSVLocalization(x_code_localization.strings)
+    csv_localization.save("tests/ffl-csv")
+
+    print(csv_localization.localized_strings_count())
