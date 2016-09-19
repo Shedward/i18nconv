@@ -114,8 +114,11 @@ class XCodeLocalization(Localization):
         string_regex = r'\"(.*)\"\s*\=\s*\"(.*)\"\s*;'
 
         strings = []
-        for (string, translation) in re.findall(string_regex, clean_file):
-            strings.append(LocalizedString(string.decode('string_escape'), translation.decode('string_escape')))
+        for (tag, translation) in re.findall(string_regex, clean_file):
+            if not tag:
+                continue
+
+            strings.append(LocalizedString(tag.decode('string_escape'), translation.decode('string_escape')))
 
         return strings
 
@@ -160,28 +163,34 @@ class XCodeLocalization(Localization):
 
 class CSVLocalization(Localization):
     def load(self, path):
+        strings = []
         for filepath in find_paths(path, '*.csv', 'f'):
             filename = path_basename(filepath)
 
             file = open(filepath, 'rb')
             csv_reader = csv.DictReader(file)
 
-            strings = []
+            file_strings = []
             for row in csv_reader:
                 if "String" not in row:
                     continue
 
                 tag = row["String"]
 
-                file_strings = []
-                for locale, translation in row:
+                if not tag:
+                    continue
+
+                tag_strings = []
+                for locale, translation in row.iteritems():
                     if locale != "String":
                         string = LocalizedString(tag, translation, locale)
                         string.user_info["FileName"] = filename
-                        file_strings.append(string)
+                        tag_strings.append(string)
 
-                i18convLog.info("Imported %s strings from %s", len(file_strings), filepath)
-                string += file_strings
+                file_strings += tag_strings
+
+            strings += file_strings
+            i18convLog.info("Imported %s strings from %s", len(file_strings), filepath)
 
         self.strings = strings
         i18convLog.info("Imported %s strings", len(self.strings))
@@ -265,11 +274,9 @@ def sorted_groupby(iterable, keyfunc=None):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     i18convLog.info("Test")
-    x_code_localization = XCodeLocalization()
-    x_code_localization.load("/Users/shed/Documents/Projects/ffl-client-ios/FreeForLunch")
-    x_code_localization.save("tests/XCode_test")
 
-    csv_localization = CSVLocalization(x_code_localization.strings)
-    csv_localization.save("tests/ffl-csv")
+    ffl_csv_localization = CSVLocalization()
+    ffl_csv_localization.load('/Users/shed/Desktop/i18nconv/tests')
 
-    print(csv_localization.localized_strings_count())
+    xcode_localization = XCodeLocalization(ffl_csv_localization.strings)
+    xcode_localization.save('tests/ffl_xcode')
