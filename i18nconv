@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from argparse import ArgumentParser
 from itertools import groupby
 from collections import Counter
 import csv
@@ -269,12 +270,77 @@ def sorted_groupby(iterable, keyfunc=None):
     return groupby(sorted_iterable, keyfunc)
 
 
+def critical_error(msg, *args, **kwargs):
+    i18convLog.error(msg, *args, **kwargs)
+    exit()
+
+
+def pars_args():
+    description = '''
+    Localization converter.
+    Supported formats (case insensitive):
+        XCode
+        CSV
+    '''
+
+    parser = ArgumentParser(description=description)
+    parser.add_argument('--from', '-f', nargs='*', required=True, dest='from_param',
+                        help='Importing locale directories with type, ex. --from XCode ./XCodeProj/Resources/')
+    parser.add_argument('--to', '-t', nargs='*', required=True, dest='to_param',
+                        help='Directory with type for exported files, ex. --to CSV ./csv')
+    parser.add_argument('--verbose', '-v', help='Show verbose output', action='store_true')
+    return parser.parse_args()
+
+
+def localization_with_format(format):
+    lower_format = format.lower()
+    localization = None
+
+    if lower_format == 'xcode':
+        localization = XCodeLocalization()
+    elif lower_format == 'csv':
+        localization = CSVLocalization()
+    else:
+        critical_error("Format %s is not supported", format)
+
+    return localization
+
+
+def setup_log():
+    myhandler = logging.StreamHandler()
+    myformatter = logging.Formatter(fmt='%(levelname)s: %(message)s')
+    myhandler.setFormatter(myformatter)
+    i18convLog.addHandler(myhandler)
+
+
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    i18convLog.info("Test")
+    setup_log()
+    params = pars_args()
 
-    ffl_csv_localization = CSVLocalization()
-    ffl_csv_localization.load('/Users/shed/Desktop/i18nconv/tests')
+    if params.verbose:
+        i18convLog.setLevel(logging.INFO)
 
-    xcode_localization = XCodeLocalization(ffl_csv_localization.strings)
-    xcode_localization.save('/Users/shed/Documents/Projects/ffl-client-ios/FreeForLunch/Resources')
+    if (len(params.from_param) < 2):
+        critical_error("Parameter --from should specify format and at least one path, "
+                       "ex.: --from xcode ./XCodeProj/Resources ./XCodeProj2/Resources")
+
+    if (len(params.to_param) != 2):
+        critical_error("Parameter --to should specify format and exactly one path, "
+                       "ex.: --to xcode ./XCodeProj/Resources")
+
+    strings = []
+    import_format = params.from_param[0]
+    for path in params.from_param[1:]:
+        localization = localization_with_format(import_format)
+        localization.load(path)
+        strings += localization.strings
+
+    if not strings:
+        i18convLog.warning("Nothing to import from:\n %s" % '\n'.join(params.from_param[1:]))
+
+    export_format = params.to_param[0]
+    export_path = params.to_param[1]
+
+    export_localization = localization_with_format(export_format)
+    export_localization.strings = strings
+    export_localization.save(export_path)
