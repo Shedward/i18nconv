@@ -56,6 +56,8 @@ test.one,One,Раз
 test.three,Three,Три
 test.two,Two,Два
 ```
+Note: first column *should* be named `String`
+
 ## Examples:
 Export localized strings from XCode project to csv file:
 
