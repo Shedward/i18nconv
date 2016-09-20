@@ -14,10 +14,10 @@ Supported formats (case insensitive):
 
 optional arguments:
   -h, --help            show this help message and exit
-  --from FORMAT PATH [PATH ...], -f [FROM_PARAM [FROM_PARAM ...]]
+  --from FORMAT PATH [PATH ...], -f FORMAT PATH [PATH ...]
                         Importing locale directories with type, ex. --from
                         XCode ./XCodeProj/Resources/
-  --to FORMAT PATH, -t [TO_PARAM [TO_PARAM ...]]
+  --to FORMAT PATH, -t FORMAT PATH
                         Directory with type for exported files, ex. --to CSV
                         ./csv
   --verbose, -v         Show verbose output
